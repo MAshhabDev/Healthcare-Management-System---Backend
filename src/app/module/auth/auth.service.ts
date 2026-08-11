@@ -236,7 +236,92 @@ const googleLogin = async (payload: IGoogleLogin) => {
 
   let user = ifPatientExistWithGoogleAuth;
 
-  return isUserExists;
+  if (!ifPatientExistWithGoogleAuth) {
+    const ifPatientExistWithCredential = await prisma.user.findUnique({
+      where: {
+        email: googleTokenPayload.email,
+        role: Role.PATIENT,
+        authProvider: AuthProvider.CREDENTIAL,
+      },
+    });
+
+    if (ifPatientExistWithCredential) {
+      if (!ifPatientExistWithCredential.emailVerified) {
+        throw new Error("Email Not Verified");
+      }
+      if (ifPatientExistWithCredential.status === UserStatus.BLOCKED) {
+        throw new Error("User Is Blocked");
+      }
+      if (
+        ifPatientExistWithCredential.isDeleted ||
+        ifPatientExistWithCredential.status === UserStatus.DELETED
+      ) {
+        throw new Error("User Is Deleted");
+      }
+
+      user = await prisma.user.update({
+        where: {
+          id: ifPatientExistWithCredential.id,
+        },
+        data: {
+          googleId: googleTokenPayload.sub,
+        },
+      });
+    } else {
+      user = await prisma.user.create({
+        data: {
+          name: googleTokenPayload.name,
+          email: googleTokenPayload.email,
+          role: Role.PATIENT,
+          googleId: googleTokenPayload.sub,
+          authProvider: AuthProvider.GOOGLE,
+          emailVerified: true,
+          patient: {
+            create: {
+              name: googleTokenPayload.name,
+              email: googleTokenPayload.email,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  if (!user) {
+    throw new Error("User Not Found");
+  }
+
+  if (user.status === UserStatus.BLOCKED) {
+    throw new Error("User Is Blocked");
+  }
+
+  if (user.isDeleted || user.status === UserStatus.DELETED) {
+    throw new Error("User Is Deleted");
+  }
+
+  const jwtPayload = {
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  };
+
+  const accessToken = jwtUtils.createToken(
+    jwtPayload,
+    config.jwt_access_secret,
+    config.jwt_access_expires_in as SignOptions,
+  );
+
+  const refreshToken = jwtUtils.createToken(
+    jwtPayload,
+    config.jwt_refresh_secret,
+    config.jwt_refresh_expires_in as SignOptions,
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+  };
 };
 
 export const AuthService = {
@@ -244,4 +329,5 @@ export const AuthService = {
   loginUser,
   getMe,
   refreshToken,
+  googleLogin,
 };
