@@ -51,3 +51,52 @@ export const seedSuperAdmin = async () => {
     });
   }
 };
+
+export const testerAdmin = async () => {
+  try {
+    const isAdminExist = await prisma.user.findUnique({
+      where: {
+        email: config.admin_email,
+      },
+    });
+
+    if (isAdminExist) {
+      throw new Error("Admin Exist");
+      return;
+    }
+
+    const name = config.admin_name;
+    const email = config.admin_email;
+    const password = config.admin_password;
+
+    if (!name || !email || !password) {
+      throw new Error("Admin name,email, or password missing");
+    }
+
+    const hashPassword = await bcrypt.hash(
+      password,
+      Number(config.bcrypt_salt_rounds),
+    );
+
+    const admin = await prisma.user.create({
+      data: {
+        name,
+        email,
+        password: hashPassword,
+        role: Role.ADMIN,
+        emailVerified: true,
+        needPasswordChange: false,
+      },
+    });
+
+    console.log("Admin Created: ", admin);
+  } catch (error) {
+    console.log("Error Seeding Super Admin :", error);
+
+    await prisma.user.delete({
+      where: {
+        email: config.admin_email,
+      },
+    });
+  }
+};
