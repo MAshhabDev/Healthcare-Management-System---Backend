@@ -142,6 +142,47 @@ const googleLogin = catchAsync(async (req: Request, res: Response) => {
     },
   });
 });
+const forgetPassword = catchAsync(async (req: Request, res: Response) => {
+  const payload = req.body;
+
+  const result = await AuthService.forgetPassword(payload);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "New tokens generated successfully",
+    data: null,
+  });
+});
+const resetPassword = catchAsync(async (req: Request, res: Response) => {
+  const payload = req.body;
+
+  const result = await AuthService.googleLogin(payload);
+  const { accessToken, refreshToken } = result;
+
+  res.cookie("accessToken", accessToken, {
+    httpOnly: true,
+    secure: false,
+    sameSite: "none",
+    maxAge: 1000 * 60 * 60 * 24, // 24 hour or 1 day
+  });
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: false,
+    sameSite: "none",
+    maxAge: 1000 * 60 * 60 * 24 * 7, // 7 days
+  });
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "New tokens generated successfully",
+    data: {
+      accessToken,
+      refreshToken: refreshToken,
+    },
+  });
+});
 
 export const AuthController = {
   registerPatient,
@@ -149,4 +190,5 @@ export const AuthController = {
   getMe,
   refreshToken,
   googleLogin,
+  forgetPassword,
 };
