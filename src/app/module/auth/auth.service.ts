@@ -12,9 +12,13 @@ import {
   ILoginUserPayload,
   IRegisterPatientPayload,
   IRequestUser,
+  type IForgotPasswordPayload,
   type IGoogleLogin,
+  type IResetPasswordPayload,
 } from "./auth.interface";
 import { OAuth2Client } from "google-auth-library";
+import crypto from "crypto";
+import { redisClient } from "../../lib/redis";
 
 const registerPatient = async (payload: IRegisterPatientPayload) => {
   const { name, password } = payload;
@@ -236,7 +240,191 @@ const googleLogin = async (payload: IGoogleLogin) => {
 
   let user = ifPatientExistWithGoogleAuth;
 
-  return isUserExists;
+  if (!ifPatientExistWithGoogleAuth) {
+    const ifPatientExistWithCredential = await prisma.user.findUnique({
+      where: {
+        email: googleTokenPayload.email,
+        role: Role.PATIENT,
+        authProvider: AuthProvider.CREDENTIAL,
+      },
+    });
+
+    if (ifPatientExistWithCredential) {
+      if (!ifPatientExistWithCredential.emailVerified) {
+        throw new Error("Email Not Verified");
+      }
+      if (ifPatientExistWithCredential.status === UserStatus.BLOCKED) {
+        throw new Error("User Is Blocked");
+      }
+      if (
+        ifPatientExistWithCredential.isDeleted ||
+        ifPatientExistWithCredential.status === UserStatus.DELETED
+      ) {
+        throw new Error("User Is Deleted");
+      }
+
+      user = await prisma.user.update({
+        where: {
+          id: ifPatientExistWithCredential.id,
+        },
+        data: {
+          googleId: googleTokenPayload.sub,
+        },
+      });
+    } else {
+      user = await prisma.user.create({
+        data: {
+          name: googleTokenPayload.name,
+          email: googleTokenPayload.email,
+          role: Role.PATIENT,
+          googleId: googleTokenPayload.sub,
+          authProvider: AuthProvider.GOOGLE,
+          emailVerified: true,
+          patient: {
+            create: {
+              name: googleTokenPayload.name,
+              email: googleTokenPayload.email,
+            },
+          },
+        },
+      });
+    }
+  }
+
+  if (!user) {
+    throw new Error("User Not Found");
+  }
+
+  if (user.status === UserStatus.BLOCKED) {
+    throw new Error("User Is Blocked");
+  }
+
+  if (user.isDeleted || user.status === UserStatus.DELETED) {
+    throw new Error("User Is Deleted");
+  }
+
+  const jwtPayload = {
+    userId: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  };
+
+  const accessToken = jwtUtils.createToken(
+    jwtPayload,
+    config.jwt_access_secret,
+    config.jwt_access_expires_in as SignOptions,
+  );
+
+  const refreshToken = jwtUtils.createToken(
+    jwtPayload,
+    config.jwt_refresh_secret,
+    config.jwt_refresh_expires_in as SignOptions,
+  );
+
+  return {
+    accessToken,
+    refreshToken,
+  };
+};
+
+const forgetPassword = async (payload: IForgotPasswordPayload) => {
+  const { email } = payload;
+  const isUserExist = await prisma.user.findUnique({
+    where: {
+      email,
+    },
+  });
+
+  if (!isUserExist) {
+    throw new Error("User Does Not Exist!");
+  }
+
+  if (isUserExist.status === "BLOCKED") {
+    throw new Error("User is Blocked");
+  }
+
+  if (!isUserExist.emailVerified) {
+    throw new Error("User Not Verified");
+  }
+
+  if (isUserExist.isDeleted || isUserExist.status === "DELETED") {
+    throw new Error("User is Deleted");
+  }
+
+  if (isUserExist.googleId && isUserExist.authProvider === "GOOGLE") {
+    throw new Error("User Has Account With Google");
+  }
+
+  const key = `forgot-password-otp:${isUserExist.email}`;
+
+  const otp = crypto.randomInt(100000, 1000000).toString();
+
+  const expirationSeconds = 5 * 60;
+
+  await redisClient.set(key, otp, {
+    expiration: {
+      type: "EX",
+      value: expirationSeconds,
+    },
+  });
+};
+const resetPassword = async (payload: IResetPasswordPayload) => {
+  const { email, otp, newPassword } = payload;
+
+  const isUserExist = await prisma.user.findUnique({
+    where: {
+      email,
+    },
+  });
+
+  if (!isUserExist) {
+    throw new Error("User Does Not Exist!");
+  }
+
+  if (isUserExist.status === "BLOCKED") {
+    throw new Error("User is Blocked");
+  }
+
+  if (!isUserExist.emailVerified) {
+    throw new Error("User Not Verified");
+  }
+
+  if (isUserExist.isDeleted || isUserExist.status === "DELETED") {
+    throw new Error("User is Deleted");
+  }
+
+  if (isUserExist.googleId && isUserExist.authProvider === "GOOGLE") {
+    throw new Error("User Has Account With Google");
+  }
+
+  const key = `forgot-password-otp:${isUserExist.email}`;
+
+  const redisOtp = await redisClient.get(key);
+
+  if (!redisOtp) {
+    throw new Error("Invalid OTP");
+  }
+
+  if (redisOtp !== otp) {
+    throw new Error("OTP Does Not Match");
+  }
+
+  const hashedNewPassword = await bcrypt.hash(
+    newPassword,
+    Number(config.bcrypt_salt_rounds),
+  );
+
+  const updateUser = await prisma.user.update({
+    where: {
+      email: isUserExist.email,
+    },
+    data: {
+      password: hashedNewPassword,
+    },
+  });
+
+  await redisClient.del([key]);
 };
 
 export const AuthService = {
@@ -244,4 +432,7 @@ export const AuthService = {
   loginUser,
   getMe,
   refreshToken,
+  googleLogin,
+  forgetPassword,
+  resetPassword,
 };
