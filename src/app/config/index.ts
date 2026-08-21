@@ -6,7 +6,7 @@ dotenv.config({ path: path.join(process.cwd(), ".env") });
 export default {
   node_env: process.env.NODE_ENV,
   port: process.env.PORT,
-  database_url: process.env.DATABASE_URL,
+  database_url: process.env.DATABASE_URL!,
   bak_url: process.env.APP_URL,
   frontend_url: process.env.FRONTEND_URL,
   bcrypt_salt_rounds: process.env.BCRYPT_SALT_ROUNDS,
@@ -28,4 +28,8 @@ export default {
 
   smtp_user: process.env.SMTP_NAME!,
   smtp_password: process.env.SMTP_PASSWORD!,
+
+  cloudinary_cloud_name: process.env.CLOUD_NAME!,
+  cloudinary_api_key: process.env.CLOUD_KEY!,
+  cloudinary_api_secret: process.env.CLOUD_SECRET!,
 };
