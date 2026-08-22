@@ -13,6 +13,7 @@ import { notFound } from "./app/middleware/notFound";
 import { AuthRoutes } from "./app/module/auth/auth.route";
 import { redisClient } from "./app/lib/redis";
 import crypto from "crypto";
+import { getBkashIdToken } from "./app/lib/bkash";
 
 const app: Application = express();
 
@@ -33,16 +34,21 @@ app.use(cookieParser());
 app.use("/api/v1/auth", AuthRoutes);
 
 app.get("/test", async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const otp = crypto.randomInt(100000, 999999).toString();
+ try {
 
-    await redisClient.set("forgot-password-otp:patient1@gmail.com", "123456", {
-      expiration: {
-        type: "EX",
-        value: 60,
-      },
-    });
-  } catch (error) {}
+		const grantIdTokenResult = await getBkashIdToken()
+
+		console.log(grantIdTokenResult);
+		
+		res.status(httpStatus.OK).json({
+			success: true,
+			message: "Welcome to PH Healthcare System Backend",
+			data : null
+		});
+	} catch (error) {
+		console.log(error);
+		next(error)
+	}
 });
 
 // Basic route
