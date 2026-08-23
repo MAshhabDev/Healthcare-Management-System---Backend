@@ -3,7 +3,6 @@ import { redisClient } from "./redis";
 
 export const getBkashIdToken = async () => {
   try {
-
     // set key for redis
     const IdTokenKey = "bkash:idToken";
     const RefreshTokenKey = "bkash:refreshToken";
@@ -16,8 +15,7 @@ export const getBkashIdToken = async () => {
     const bkashRefreshToken = await redisClient.get(RefreshTokenKey);
     const bkashRefreshTokenTTL = await redisClient.ttl(RefreshTokenKey);
 
-
-    // check that token is valid or not and has minimun of time 
+    // check that token is valid or not and has minimun of time
 
     if (
       (bkashIdTokenTTL <= 600 || !bkashIdToken) &&
@@ -25,7 +23,7 @@ export const getBkashIdToken = async () => {
       bkashRefreshTokenTTL > 600
     ) {
       const refreshTokenResponse = await fetch(
-        `${config.bkash_base_url}/tokenized,checkout,token/refresh`,
+        `${config.bkash_base_url}/tokenized/checkout/token/refresh`,
         {
           method: "POST",
           headers: {
@@ -37,6 +35,7 @@ export const getBkashIdToken = async () => {
           body: JSON.stringify({
             app_key: config.bkash_app_key,
             app_secret: config.bkash_app_secret,
+            refresh_token: bkashRefreshToken,
           }),
         },
       );
@@ -64,7 +63,7 @@ export const getBkashIdToken = async () => {
     }
 
     const response = await fetch(
-      `${config.bkash_base_url}/tokenized,checkout,token/refresh`,
+      `${config.bkash_base_url}/tokenized,checkout,token/grant`,
       {
         method: "POST",
         headers: {
